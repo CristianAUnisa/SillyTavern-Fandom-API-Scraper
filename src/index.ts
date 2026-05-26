@@ -5,8 +5,6 @@ if (typeof global.File === 'undefined') {
     (global as any).File = File;
 }
 
-import bodyParser from 'body-parser';
-import { Router } from 'express';
 import chalk from 'chalk';
 import axios from 'axios';
 import { convert } from 'html-to-text';
@@ -25,34 +23,12 @@ interface WikiApiResponse {
     };
 }
 
-interface Page {
+export interface Page {
     title: string;
     content: string;
 }
 
-interface FandomScrapeRequest {
-    fandom: string;
-    filter: string;
-}
-
-interface MediaWikiScrapeRequest {
-    url: string;
-    filter: string;
-}
-
-interface PluginInfo {
-    id: string;
-    name: string;
-    description: string;
-}
-
-interface Plugin {
-    init: (router: Router) => Promise<void>;
-    exit: () => Promise<void>;
-    info: PluginInfo;
-}
-
-interface ScrapeConfig {
+export interface ScrapeConfig {
     concurrency: number;
     minDelay: number;
     maxDelay: number;
@@ -108,7 +84,7 @@ const TEXT_CONVERT_OPTIONS = {
     ],
 };
 
-function getFandomApiUrl(fandom: string): string {
+export function getFandomApiUrl(fandom: string): string {
     try {
         fandom = fandom.trim();
         if (fandom.includes('.')) {
@@ -125,7 +101,7 @@ function getFandomApiUrl(fandom: string): string {
     }
 }
 
-function getMediaWikiApiUrl(urlStr: string): string {
+export function getMediaWikiApiUrl(urlStr: string): string {
     let url = urlStr.trim();
     if (url.endsWith('/')) url = url.slice(0, -1);
     if (!url.endsWith('api.php')) {
@@ -134,7 +110,7 @@ function getMediaWikiApiUrl(urlStr: string): string {
     return url;
 }
 
-function regexFromString(input: string): RegExp | undefined {
+export function regexFromString(input: string): RegExp | undefined {
     try {
         const match = input?.match(/(\/?)(.+)\1([a-z]*)/i);
         if (!match) return;
@@ -153,7 +129,7 @@ const randomSleep = (min: number, max: number) => {
     return sleep(Math.floor(Math.random() * (max - min + 1) + min));
 };
 
-async function performScrape(
+export async function performScrape(
     apiUrl: string,
     config: ScrapeConfig,
     filter?: RegExp,
@@ -336,101 +312,3 @@ async function performScrape(
     return results;
 }
 
-export async function init(router: Router): Promise<void> {
-    const jsonParser = bodyParser.json();
-
-    router.post(['/probe-mediawiki', '/probe'], (_req, res) => {
-        res.sendStatus(204);
-    });
-
-    router.post(['/scrape-fandom', '/scrape'], jsonParser, async (req, res) => {
-        try {
-            const model = req.body as FandomScrapeRequest;
-            const apiUrl = getFandomApiUrl(model.fandom);
-            const filter = regexFromString(model.filter);
-
-            const config: ScrapeConfig = {
-                concurrency: 30,
-                minDelay: 0,
-                maxDelay: 0,
-                autoFilterLangs: false,
-                listingDelay: 0,
-            };
-
-            const results = await performScrape(apiUrl, config, filter);
-            console.log(
-                chalk.green(MODULE_NAME),
-                `Job Done! Returning ${results.length} pages.`,
-            );
-
-            res.setHeader('Content-Type', 'application/json');
-            res.write('[');
-            for (let i = 0; i < results.length; i++) {
-                res.write(JSON.stringify(results[i]));
-                if (i < results.length - 1) {
-                    res.write(',');
-                }
-            }
-            res.write(']');
-            res.end();
-        } catch (error: any) {
-            console.error(chalk.red(MODULE_NAME), error.message);
-            if (!res.headersSent) {
-                res.status(500).send(error.message);
-            }
-        }
-    });
-
-    router.post('/scrape-mediawiki', jsonParser, async (req, res) => {
-        try {
-            const model = req.body as MediaWikiScrapeRequest;
-            const apiUrl = getMediaWikiApiUrl(model.url);
-            const filter = regexFromString(model.filter);
-
-            const config: ScrapeConfig = {
-                concurrency: 2,
-                minDelay: 100,
-                maxDelay: 800,
-                autoFilterLangs: true,
-                listingDelay: 200,
-            };
-
-            const results = await performScrape(apiUrl, config, filter);
-            console.log(
-                chalk.green(MODULE_NAME),
-                `Job Done! Returning ${results.length} pages.`,
-            );
-
-            res.setHeader('Content-Type', 'application/json');
-            res.write('[');
-            for (let i = 0; i < results.length; i++) {
-                res.write(JSON.stringify(results[i]));
-                if (i < results.length - 1) {
-                    res.write(',');
-                }
-            }
-            res.write(']');
-            res.end();
-        } catch (error: any) {
-            console.error(chalk.red(MODULE_NAME), error.message);
-            if (!res.headersSent) {
-                res.status(500).send(error.message);
-            }
-        }
-    });
-
-    console.log(chalk.green(MODULE_NAME), 'Plugin successfully loaded!');
-}
-
-export async function exit(): Promise<void> {
-    console.log(chalk.yellow(MODULE_NAME), 'Plugin exited');
-}
-
-export const info: PluginInfo = {
-    id: 'fandom',
-    name: 'Wiki API Scraper',
-    description: 'Scraper for MediaWiki/Fandom pages.',
-};
-
-const plugin: Plugin = { init, exit, info };
-export default plugin;

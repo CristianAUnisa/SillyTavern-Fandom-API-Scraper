@@ -6,12 +6,10 @@ const serverConfig = {
     devtool: false,
     mode: 'production',
     target: 'node',
-    entry: './src/index.ts',
+    entry: './src/cli.ts',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'plugin.js',
-        libraryTarget: 'commonjs',
-        libraryExport: 'default',
+        filename: 'cli.js',
     },
     resolve: {
         extensions: ['.ts', '.js'],
@@ -44,6 +42,10 @@ const serverConfig = {
         },
     ],
     plugins: [
+        new webpack.BannerPlugin({
+            banner: '#!/usr/bin/env node',
+            raw: true,
+        }),
         new webpack.IgnorePlugin({
             resourceRegExp: /canvas/,
             contextRegExp: /jsdom$/,

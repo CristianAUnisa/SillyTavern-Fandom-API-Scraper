@@ -36,3 +36,7 @@ pids
 *.pid
 *.seed
 *.pid.lock
+
+komisan_archive/
+komisan.md
+typemoon_archive.md
