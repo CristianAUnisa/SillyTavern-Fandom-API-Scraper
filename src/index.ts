@@ -10,6 +10,10 @@ import axios from 'axios';
 import { convert } from 'html-to-text';
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
+import { getFandomApiUrl, getMediaWikiApiUrl, regexFromString } from './utils';
+
+export { getFandomApiUrl, getMediaWikiApiUrl, regexFromString };
+
 
 interface WikiApiResponse {
     query?: {
@@ -83,45 +87,6 @@ const TEXT_CONVERT_OPTIONS = {
         { selector: 'table', format: 'skip' },
     ],
 };
-
-export function getFandomApiUrl(fandom: string): string {
-    try {
-        fandom = fandom.trim();
-        if (fandom.includes('.')) {
-            const url = new URL(
-                fandom.startsWith('http') ? fandom : `https://${fandom}`,
-            );
-            if (url.hostname.endsWith('fandom.com')) {
-                return `${url.protocol}//${url.hostname}/api.php`;
-            }
-        }
-        return `https://${fandom}.fandom.com/api.php`;
-    } catch (error) {
-        return `https://${fandom}.fandom.com/api.php`;
-    }
-}
-
-export function getMediaWikiApiUrl(urlStr: string): string {
-    let url = urlStr.trim();
-    if (url.endsWith('/')) url = url.slice(0, -1);
-    if (!url.endsWith('api.php')) {
-        return `${url}/api.php`;
-    }
-    return url;
-}
-
-export function regexFromString(input: string): RegExp | undefined {
-    try {
-        const match = input?.match(/(\/?)(.+)\1([a-z]*)/i);
-        if (!match) return;
-        if (match[3] && !/^(?!.*?(.).*?\1)[gmixXsuUAJ]+$/.test(match[3])) {
-            return RegExp(input, 'i');
-        }
-        return new RegExp(match[2], match[3]);
-    } catch {
-        return;
-    }
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const randomSleep = (min: number, max: number) => {

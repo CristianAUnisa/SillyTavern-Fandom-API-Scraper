@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import chalk from 'chalk';
-import axios from 'axios';
 import {
     performScrape,
     performScrapePages,
@@ -12,6 +11,7 @@ import {
     ScrapeConfig,
     Page
 } from './index';
+import { resolveApiUrl, parseWikiUrl } from './utils';
 
 const program = new Command();
 
@@ -33,87 +33,6 @@ program
     .option('-r, --filter <regex>', 'Regular expression to filter page titles (e.g. "^Character:")')
     .option('--lang-filter', 'Enable automatic language subpage filtering (e.g., removing /ru, /es)', undefined)
     .option('--no-lang-filter', 'Disable automatic language subpage filtering');
-
-const apiCache = new Map<string, string>();
-
-async function resolveApiUrl(domain: string, protocol: string): Promise<string> {
-    if (apiCache.has(domain)) {
-        return apiCache.get(domain)!;
-    }
-
-    if (domain.endsWith('fandom.com')) {
-        const apiUrl = `${protocol}//${domain}/api.php`;
-        apiCache.set(domain, apiUrl);
-        return apiUrl;
-    }
-
-    const candidates = [
-        `${protocol}//${domain}/w/api.php`,
-        `${protocol}//${domain}/api.php`,
-    ];
-
-    for (const candidate of candidates) {
-        try {
-            const response = await axios.get(candidate, {
-                params: { action: 'query', format: 'json' },
-                headers: {
-                    'User-Agent':
-                        'SillyTavern-Fandom-API-Scraper/1.0.3 (https://github.com/Nidelon/SillyTavern-Fandom-API-Scraper)',
-                    Accept: 'application/json',
-                },
-                timeout: 5000,
-            });
-            if (
-                response.status === 200 &&
-                response.data &&
-                typeof response.data === 'object'
-            ) {
-                apiCache.set(domain, candidate);
-                return candidate;
-            }
-        } catch {
-            // ignore and try next
-        }
-    }
-
-    const fallback = `${protocol}//${domain}/api.php`;
-    apiCache.set(domain, fallback);
-    return fallback;
-}
-
-function parseWikiUrl(urlStr: string): { domain: string; pageTitle: string; protocol: string } | null {
-    try {
-        const url = new URL(urlStr);
-        let pageTitle = '';
-
-        if (url.searchParams.has('title')) {
-            pageTitle = url.searchParams.get('title') || '';
-        } else {
-            const pathname = url.pathname;
-            const segments = pathname.split('/').filter(Boolean);
-            if (
-                segments.length >= 2 &&
-                (segments[0] === 'wiki' || segments[0] === 'w')
-            ) {
-                pageTitle = segments.slice(1).join('/');
-            } else if (segments.length > 0) {
-                pageTitle = segments[segments.length - 1];
-            }
-        }
-
-        if (!pageTitle) return null;
-
-        pageTitle = decodeURIComponent(pageTitle).replace(/_/g, ' ');
-
-        return {
-            domain: url.hostname,
-            pageTitle,
-            protocol: url.protocol,
-        };
-    } catch {
-        return null;
-    }
-}
 
 program.action(async (options) => {
     try {
