@@ -215,86 +215,9 @@ export async function performScrape(
 
     const tasks = allPages.map((page) =>
         limit(async () => {
-            let attempts = 0;
-            let success = false;
-
-            while (!success && attempts < MAX_RETRIES) {
-                try {
-                    await randomSleep(config.minDelay, config.maxDelay);
-
-                    const response = await axios.get<WikiApiResponse>(apiUrl, {
-                        params: {
-                            action: 'parse',
-                            page: page.title,
-                            prop: 'text',
-                            format: 'json',
-                            disablelimitreport: 1,
-                            disableeditsection: 1,
-                            redirects: 1,
-                        },
-                        headers: DEFAULT_HEADERS,
-                        timeout: 15000,
-                    });
-
-                    const data = response.data;
-                    success = true;
-
-                    if (!data.parse || !data.parse.text) return;
-
-                    const html = data.parse.text['*'];
-                    const $ = cheerio.load(html);
-
-                    $(SELECTORS_TO_REMOVE.join(', ')).remove();
-                    $('h2, h3, h4, h5, h6').each((i, el) => {
-                        const next = $(el).next();
-                        if (
-                            next.length === 0 ||
-                            /^h[2-6]$/.test(next[0].name)
-                        ) {
-                            $(el).remove();
-                        }
-                    });
-
-                    let text = convert($.html(), TEXT_CONVERT_OPTIONS as any);
-                    text = text
-                        .replace(/\[edit\]/gi, '')
-                        .replace(/[ \t]+/g, ' ')
-                        .replace(/\n\s*\n/g, '\n\n')
-                        .trim();
-
-                    if (text.length >= MIN_TEXT_LENGTH) {
-                        results.push({ title: page.title, content: text });
-                    }
-                } catch (e: any) {
-                    attempts++;
-                    const status = e.response ? e.response.status : 'Unknown';
-
-                    if (status === 429) {
-                        const waitTime =
-                            BASE_RETRY_DELAY * Math.pow(2, attempts - 1);
-                        console.log(
-                            chalk.yellow(MODULE_NAME),
-                            `Rate Limited (429) on "${page.title}". Retrying in ${waitTime / 1000}s...`,
-                        );
-                        await sleep(waitTime);
-                    } else if (
-                        status === 503 ||
-                        status === 502 ||
-                        e.code === 'ECONNRESET'
-                    ) {
-                        await sleep(2000);
-                    } else {
-                        if (attempts === 1) {
-                            if (config.concurrency < 5) {
-                                console.error(
-                                    chalk.red(MODULE_NAME),
-                                    `Failed "${page.title}": ${e.message} (${status})`,
-                                );
-                            }
-                        }
-                        break;
-                    }
-                }
+            const content = await scrapePage(apiUrl, page.title, config);
+            if (content !== null) {
+                results.push({ title: page.title, content });
             }
         }).finally(() => {
             completed++;
@@ -303,6 +226,133 @@ export async function performScrape(
                 console.log(
                     chalk.gray(MODULE_NAME),
                     `Progress: ${completed}/${allPages.length} | Scraped: ${results.length}`,
+                );
+            }
+        }),
+    );
+
+    await Promise.all(tasks);
+    return results;
+}
+
+export async function scrapePage(
+    apiUrl: string,
+    pageTitle: string,
+    config: ScrapeConfig,
+): Promise<string | null> {
+    let attempts = 0;
+    let success = false;
+
+    while (!success && attempts < MAX_RETRIES) {
+        try {
+            await randomSleep(config.minDelay, config.maxDelay);
+
+            const response = await axios.get<WikiApiResponse>(apiUrl, {
+                params: {
+                    action: 'parse',
+                    page: pageTitle,
+                    prop: 'text',
+                    format: 'json',
+                    disablelimitreport: 1,
+                    disableeditsection: 1,
+                    redirects: 1,
+                },
+                headers: DEFAULT_HEADERS,
+                timeout: 15000,
+            });
+
+            const data = response.data;
+            success = true;
+
+            if (!data.parse || !data.parse.text) return null;
+
+            const html = data.parse.text['*'];
+            const $ = cheerio.load(html);
+
+            $(SELECTORS_TO_REMOVE.join(', ')).remove();
+            $('h2, h3, h4, h5, h6').each((i, el) => {
+                const next = $(el).next();
+                if (
+                    next.length === 0 ||
+                    /^h[2-6]$/.test(next[0].name)
+                ) {
+                    $(el).remove();
+                }
+            });
+
+            let text = convert($.html(), TEXT_CONVERT_OPTIONS as any);
+            text = text
+                .replace(/\[edit\]/gi, '')
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n\s*\n/g, '\n\n')
+                .trim();
+
+            if (text.length >= MIN_TEXT_LENGTH) {
+                return text;
+            }
+            return null;
+        } catch (e: any) {
+            attempts++;
+            const status = e.response ? e.response.status : 'Unknown';
+
+            if (status === 429) {
+                const waitTime =
+                    BASE_RETRY_DELAY * Math.pow(2, attempts - 1);
+                console.log(
+                    chalk.yellow(MODULE_NAME),
+                    `Rate Limited (429) on "${pageTitle}". Retrying in ${waitTime / 1000}s...`,
+                );
+                await sleep(waitTime);
+            } else if (
+                status === 503 ||
+                status === 502 ||
+                e.code === 'ECONNRESET'
+            ) {
+                await sleep(2000);
+            } else {
+                if (attempts === 1) {
+                    if (config.concurrency < 5) {
+                        console.error(
+                            chalk.red(MODULE_NAME),
+                            `Failed "${pageTitle}": ${e.message} (${status})`,
+                        );
+                    }
+                }
+                break;
+            }
+        }
+    }
+    return null;
+}
+
+export async function performScrapePages(
+    apiUrl: string,
+    pageTitles: string[],
+    config: ScrapeConfig,
+): Promise<Page[]> {
+    console.log(chalk.blue(MODULE_NAME), `Target API: ${apiUrl}`);
+    console.log(
+        chalk.gray(MODULE_NAME),
+        `Mode: Concurrency=${config.concurrency}, Delay=${config.minDelay}-${config.maxDelay}ms, Specific Pages Scraping`,
+    );
+
+    const limit = pLimit(config.concurrency);
+    const results: Page[] = [];
+    let completed = 0;
+
+    const tasks = pageTitles.map((title) =>
+        limit(async () => {
+            const content = await scrapePage(apiUrl, title, config);
+            if (content !== null) {
+                results.push({ title, content });
+            }
+        }).finally(() => {
+            completed++;
+            const logStep = config.concurrency > 10 ? 200 : 20;
+            if (completed % logStep === 0 || completed === pageTitles.length) {
+                console.log(
+                    chalk.gray(MODULE_NAME),
+                    `Progress: ${completed}/${pageTitles.length} | Scraped: ${results.length}`,
                 );
             }
         }),

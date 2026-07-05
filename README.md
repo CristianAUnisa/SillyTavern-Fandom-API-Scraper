@@ -44,7 +44,8 @@ You can run the script using `node dist/cli.js [options]` (or simply `fandom-arc
 |---|---|---|---|
 | `--wiki <name>` | `-w` | Fandom wiki name (e.g., `fallout` or `community.fandom.com`) | |
 | `--url <url>` | `-u` | Generic MediaWiki base URL or endpoint (e.g., `https://minecraft.wiki`) | |
-| `--output <path>` | `-o` | Output file or directory path | `<wiki-name>.json` / `<wiki-name>_archive` |
+| `--input-file <path>`| `-i` | Path to a text file containing page URLs or page titles to scrape (one per line) | |
+| `--output <path>` | `-o` | Output file or directory path | `<wiki-name>.json` / `<wiki-name>_archive` / `<input-file-name>.json` |
 | `--format <format>` | `-f` | Output format: `json`, `txt`, `md` | `json` |
 | `--concurrency <num>`| `-c` | Number of concurrent API requests | `30` (Fandom) / `2` (MediaWiki) |
 | `--min-delay <ms>` | | Minimum delay in milliseconds between requests | `0` (Fandom) / `100` (MediaWiki) |
@@ -81,6 +82,27 @@ node dist/cli.js --wiki community --filter "^Character:" -o characters.json
 Scrapes a custom MediaWiki wiki (e.g., Minecraft Wiki) with conservative concurrency and delays to avoid getting rate-limited:
 ```bash
 node dist/cli.js --url https://minecraft.wiki --concurrency 2 --min-delay 200 --max-delay 1000 -o minecraft.json
+```
+
+### 5. Archive Pages from an Input File (URLs or page titles)
+You can specify a text file containing a list of page URLs or page titles (one per line). 
+
+If the file contains URLs, the tool automatically resolves their respective API endpoints:
+```bash
+# links.txt contains:
+# https://fallout.fandom.com/wiki/Vault_111
+# https://minecraft.wiki/w/Creeper
+
+node dist/cli.js -i links.txt -f md -o my_archive
+```
+
+If the file contains page titles, you must specify a base `--wiki` or `--url`:
+```bash
+# titles.txt contains:
+# Vault Boy
+# Sole Survivor
+
+node dist/cli.js -w fallout -i titles.txt -f md-single -o fallout_characters.md
 ```
 
 ---
