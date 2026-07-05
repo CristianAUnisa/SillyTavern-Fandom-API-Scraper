@@ -54,7 +54,6 @@ const DEFAULT_HEADERS = {
 };
 
 const SELECTORS_TO_REMOVE = [
-    '.portable-infobox',
     '.navbox',
     '.toc',
     '.wds-tabs',
@@ -69,10 +68,9 @@ const SELECTORS_TO_REMOVE = [
     '.messagebox',
     '.notice',
     '.error',
-    'table',
+    'table:not([class*="infobox"]):not([class*="pi-"])',
     'figure',
     'video',
-    '.infobox',
     '.reference',
     '.mw-jump-link',
     '#mw-navigation',
@@ -84,6 +82,8 @@ const TEXT_CONVERT_OPTIONS = {
     selectors: [
         { selector: 'a', options: { ignoreHref: true } },
         { selector: 'img', format: 'skip' },
+        { selector: 'table[class*="infobox"]', format: 'table' },
+        { selector: 'table[class*="pi-"]', format: 'table' },
         { selector: 'table', format: 'skip' },
     ],
 };
@@ -235,7 +235,55 @@ export async function scrapePage(
             const $ = cheerio.load(html);
 
             $(SELECTORS_TO_REMOVE.join(', ')).remove();
+
+            // Remove Wikipedia link "WP" superscript icons
+            $('sup').each((i, el) => {
+                if ($(el).text().trim() === 'WP') {
+                    $(el).remove();
+                }
+            });
+
+            // Restructure pi-smart-group elements to pair labels and values on the same line
+            $('.pi-smart-group').each((i, group) => {
+                const head = $(group).find('.pi-smart-group-head');
+                const body = $(group).find('.pi-smart-group-body');
+
+                if (head.length > 0 && body.length > 0) {
+                    const labels = head.children();
+                    const values = body.children();
+                    let replacementHtml = '';
+                    labels.each((idx, labelNode) => {
+                        const labelText = $(labelNode).text().trim();
+                        const valueNode = values.eq(idx);
+                        if (valueNode.length > 0) {
+                            const valueText = valueNode.text().trim();
+                            replacementHtml += `<div class="pi-smart-pair"><strong>${labelText}</strong> ${valueText}</div>`;
+                        }
+                    });
+                    if (replacementHtml) {
+                        $(group).replaceWith(replacementHtml);
+                    }
+                } else if (body.length > 0) {
+                    const children = body.children();
+                    let replacementHtml = '';
+                    for (let idx = 0; idx < children.length; idx += 2) {
+                        const labelNode = children.eq(idx);
+                        const valueNode = children.eq(idx + 1);
+                        if (labelNode.length > 0 && valueNode.length > 0) {
+                            const labelText = labelNode.text().trim();
+                            const valueText = valueNode.text().trim();
+                            replacementHtml += `<div class="pi-smart-pair"><strong>${labelText}:</strong> ${valueText}</div>`;
+                        }
+                    }
+                    if (replacementHtml) {
+                        $(group).replaceWith(replacementHtml);
+                    }
+                }
+            });
             $('h2, h3, h4, h5, h6').each((i, el) => {
+                if ($(el).parents('.portable-infobox, .infobox, aside').length > 0) {
+                    return;
+                }
                 const next = $(el).next();
                 if (
                     next.length === 0 ||
@@ -243,6 +291,14 @@ export async function scrapePage(
                 ) {
                     $(el).remove();
                 }
+            });
+
+            $('.portable-infobox, .infobox, aside').each((i, el) => {
+                if ($(el).parents('.portable-infobox, .infobox, aside').length > 0) {
+                    return;
+                }
+                $(el).before('<div>::: INFOBOX START :::</div>');
+                $(el).after('<div>::: INFOBOX END :::</div>');
             });
 
             let text = convert($.html(), TEXT_CONVERT_OPTIONS as any);

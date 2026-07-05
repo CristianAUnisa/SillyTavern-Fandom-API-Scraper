@@ -23,7 +23,8 @@ describe('scraper', () => {
             const mockHtml = `
                 <div>
                     <h2>Page Title</h2>
-                    <div class="portable-infobox">Should be removed</div>
+                    <div class="portable-infobox">Should be kept</div>
+                    <div class="navbox">Should be removed</div>
                     <p>This is a valid scraped page content containing enough character content to easily bypass the minimum text length requirement of 100 characters. Vault 111 is a great starting location in Fallout 4.</p>
                     <script>console.log("removed");</script>
                 </div>
@@ -43,6 +44,9 @@ describe('scraper', () => {
             const content = await scrapePage('https://fallout.fandom.com/api.php', 'Test Page', mockConfig);
             expect(content).not.toBeNull();
             expect(content).toContain('This is a valid scraped page content');
+            expect(content).toContain('Should be kept');
+            expect(content).toContain('::: INFOBOX START :::');
+            expect(content).toContain('::: INFOBOX END :::');
             expect(content).not.toContain('Should be removed');
             expect(content).not.toContain('removed');
         });
