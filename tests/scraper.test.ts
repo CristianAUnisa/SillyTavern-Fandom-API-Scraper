@@ -95,6 +95,68 @@ describe('scraper', () => {
             
             vi.useRealTimers();
         });
+
+        it('should keep and parse dialogue tables with translation tabs and audio files', async () => {
+            const mockHtml = `
+                <div>
+                    <h2>Dialogue Test</h2>
+                    <table class="wikitable dialogue-table" lang="ja">
+                        <tbody>
+                            <tr>
+                                <th colspan="4">Disclaimer: Before adding Translations, please be careful</th>
+                            </tr>
+                            <tr>
+                                <th class="DialogueNoticeHeader">Occasion</th>
+                                <th class="DialogueNoticeHeader">Japanese</th>
+                                <th class="DialogueNoticeHeader">English</th>
+                                <th class="DialogueNoticeHeader">Audio</th>
+                            </tr>
+                            <tr>
+                                <th colspan="4">Summoning</th>
+                            </tr>
+                            <tr>
+                                <th id="Summoned">Summoned</th>
+                                <td>ブリュンヒルデ……</td>
+                                <td>
+                                    <div class="wds-tabber">
+                                        <ul class="wds-tabs">
+                                            <li class="wds-tabs__tab"><div class="wds-tabs__tab-label">NA</div></li>
+                                            <li class="wds-tabs__tab"><div class="wds-tabs__tab-label">TL</div></li>
+                                        </ul>
+                                        <div class="wds-tab__content">Brynhild...</div>
+                                        <div class="wds-tab__content">Brynhildr.</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <audio src="https://static.wikia.nocookie.net/s088_summon.ogg"></audio>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            mockedAxios.get.mockResolvedValueOnce({
+                status: 200,
+                data: {
+                    parse: {
+                        text: {
+                            '*': mockHtml,
+                        },
+                    },
+                },
+            } as any);
+
+            const content = await scrapePage('https://fallout.fandom.com/api.php', 'Dialogue Page', mockConfig);
+            expect(content).not.toBeNull();
+            expect(content).toContain('SUMMONING');
+            expect(content).toContain('SUMMONED');
+            expect(content).toContain('ブリュンヒルデ……');
+            expect(content).toContain('English (NA):');
+            expect(content).toContain('Brynhild...');
+            expect(content).toContain('English (TL):');
+            expect(content).toContain('Brynhildr.');
+        });
     });
 
     describe('performScrapePages', () => {

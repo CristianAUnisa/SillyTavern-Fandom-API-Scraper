@@ -75,6 +75,9 @@ const SELECTORS_TO_REMOVE = [
     '.mw-jump-link',
     '#mw-navigation',
     '.ambox',
+    '[class*="trfc"]',
+    '[class*="quick-answers"]',
+    '[class*="QuickAnswers"]',
 ];
 
 const TEXT_CONVERT_OPTIONS = {
@@ -234,6 +237,8 @@ export async function scrapePage(
             const html = data.parse.text['*'];
             const $ = cheerio.load(html);
 
+            parseDialogueTables($);
+
             $(SELECTORS_TO_REMOVE.join(', ')).remove();
 
             // Remove Wikipedia link "WP" superscript icons
@@ -381,5 +386,188 @@ export async function performScrapePages(
 
     await Promise.all(tasks);
     return results;
+}
+
+function parseDialogueTables($: cheerio.CheerioAPI) {
+    $('table').each((i, tableEl) => {
+        const table = $(tableEl);
+
+        const hasClass = table.hasClass('dialogue-table') || 
+                         (table.attr('class') && table.attr('class')?.includes('dialogue'));
+        
+        let hasOccasionHeader = false;
+        let hasTranslationHeader = false;
+
+        table.find('th').each((j, thEl) => {
+            const txt = $(thEl).text().trim().toLowerCase();
+            if (txt === 'occasion' || txt === 'line' || txt === 'trigger') {
+                hasOccasionHeader = true;
+            }
+            if (txt === 'japanese' || txt === 'english' || txt === 'translation' || txt === 'original') {
+                hasTranslationHeader = true;
+            }
+        });
+
+        const isDialogueTable = hasClass || (hasOccasionHeader && hasTranslationHeader);
+
+        if (!isDialogueTable) {
+            return;
+        }
+
+        let totalHeaderCols = 0;
+        let occasionColIdx = -1;
+        const dataCols: Array<{ index: number; title: string }> = [];
+        let headerRowFound = false;
+
+        // Try to identify column headers
+        table.find('tr').each((rowIdx, trEl) => {
+            if (headerRowFound) return;
+            const row = $(trEl);
+            const ths = row.find('th');
+            if (ths.length >= 2) {
+                let hasKeyHeader = false;
+                ths.each((thIdx, thEl) => {
+                    const text = $(thEl).text().trim().toLowerCase();
+                    if (
+                        text === 'occasion' ||
+                        text === 'line' ||
+                        text === 'trigger' ||
+                        text === 'japanese' ||
+                        text === 'english' ||
+                        text === 'translation'
+                    ) {
+                        hasKeyHeader = true;
+                    }
+                });
+
+                if (hasKeyHeader) {
+                    headerRowFound = true;
+                    totalHeaderCols = ths.length;
+                    ths.each((thIdx, thEl) => {
+                        const cleanTitle = $(thEl).text().trim();
+                        const lowerTitle = cleanTitle.toLowerCase();
+
+                        if (
+                            lowerTitle === 'occasion' ||
+                            lowerTitle === 'line' ||
+                            lowerTitle === 'trigger' ||
+                            lowerTitle === 'context' ||
+                            lowerTitle === 'situation'
+                        ) {
+                            occasionColIdx = thIdx;
+                        } else if (
+                            lowerTitle.includes('audio') ||
+                            lowerTitle.includes('file') ||
+                            lowerTitle.includes('note') ||
+                            lowerTitle.includes('ref') ||
+                            lowerTitle.includes('source') ||
+                            lowerTitle.includes('disclaimer') ||
+                            lowerTitle.includes('proof')
+                        ) {
+                            // skip
+                        } else {
+                            dataCols.push({ index: thIdx, title: cleanTitle });
+                        }
+                    });
+                }
+            }
+        });
+
+        // Fallback defaults
+        if (!headerRowFound) {
+            totalHeaderCols = 4;
+            occasionColIdx = 0;
+            dataCols.push({ index: 1, title: 'Japanese' });
+            dataCols.push({ index: 2, title: 'English' });
+        }
+
+        let replacementHtml = '<div class="dialogue-block">';
+        let currentSection = '';
+        let currentOccasion = '';
+
+        table.find('tr').each((rowIdx, trEl) => {
+            const row = $(trEl);
+            const ths = row.find('th');
+            const tds = row.find('td');
+
+            // Section header row
+            if (ths.length > 0 && tds.length === 0) {
+                const headerText = ths.first().text().trim();
+                const lowerHeader = headerText.toLowerCase();
+
+                if (
+                    lowerHeader.includes('disclaimer') ||
+                    lowerHeader.includes('notice') ||
+                    lowerHeader.includes('before adding') ||
+                    lowerHeader.includes('occasion') ||
+                    lowerHeader.includes('japanese') ||
+                    lowerHeader.includes('english') ||
+                    lowerHeader.includes('translation')
+                ) {
+                    return;
+                }
+
+                currentSection = headerText;
+                replacementHtml += `<h3>${currentSection}</h3>`;
+                return;
+            }
+
+            const cells = row.children();
+            if (cells.length < 1) {
+                return;
+            }
+
+            const hasOccasionInRow = occasionColIdx !== -1 && cells.length >= totalHeaderCols;
+
+            let occasionText = '';
+            if (hasOccasionInRow) {
+                occasionText = cells.eq(occasionColIdx).text().trim();
+                if (occasionText) {
+                    currentOccasion = occasionText;
+                }
+            }
+
+            const lowerOccasion = occasionText.toLowerCase();
+            if (lowerOccasion === 'occasion' || lowerOccasion.includes('disclaimer') || lowerOccasion.includes('notice')) {
+                return;
+            }
+
+            let entryHtml = '';
+            dataCols.forEach((col) => {
+                const cellIdx = (occasionColIdx !== -1 && !hasOccasionInRow && col.index > occasionColIdx) 
+                                ? col.index - 1 
+                                : col.index;
+                if (cellIdx >= 0 && cellIdx < cells.length) {
+                    const cell = cells.eq(cellIdx);
+                    const tabber = cell.find('.wds-tabber');
+                    if (tabber.length > 0) {
+                        const tabs = tabber.find('.wds-tabs__tab-label');
+                        const contents = tabber.find('.wds-tab__content');
+                        tabs.each((tabIdx, tabEl) => {
+                            const tabName = $(tabEl).text().trim();
+                            const contentEl = contents.eq(tabIdx);
+                            if (contentEl.length > 0) {
+                                entryHtml += `<p><strong>${col.title} (${tabName}):</strong><br>${contentEl.html() || ''}</p>`;
+                            }
+                        });
+                    } else {
+                        entryHtml += `<p><strong>${col.title}:</strong><br>${cell.html() || ''}</p>`;
+                    }
+                }
+            });
+
+            if (entryHtml) {
+                replacementHtml += `
+                    <div class="dialogue-entry">
+                        <h4>${currentOccasion}</h4>
+                        ${entryHtml}
+                    </div>
+                `;
+            }
+        });
+
+        replacementHtml += '</div>';
+        table.replaceWith(replacementHtml);
+    });
 }
 

@@ -2,6 +2,13 @@
 
 A standalone command-line interface (CLI) tool designed to dump an entire Fandom or MediaWiki wiki into structured files (JSON, TXT, or MD) for archiving, offline viewing, or RAG (Retrieval-Augmented Generation) applications.
 
+### Key Features
+- **Generic Table Extraction**: Automatically detects and extracts dialogue, translation, and voice line tables (e.g., FGO servant dialogue pages). It maps table columns dynamically based on headers (e.g., `Japanese`, `English`, `Romaji`) and formats them cleanly in the output.
+- **Nested Translation Tabs (wds-tabber)**: Properly parses nested translation tab switchers (e.g., separate `NA` and `TL` translation tabs) into clean, distinct tracks.
+- **AI Quick Answers Exclusion**: Automatically filters out and excludes Fandom's AI-generated "Quick Answers" blocks to ensure clean archives without garbage content.
+- **Concurrency Control & Delays**: Configurable concurrency and rate-limiting options to run safely against MediaWiki/Fandom blocklists.
+- **Language Subpage Filtering**: Optionally filters out non-primary language subpages (e.g., `/es`, `/ru`, etc.) to keep the archive focused.
+
 ### Important Notice
 MediaWiki parsing can take a long time due to rate limiting. If scraping a generic MediaWiki, use lower concurrency (e.g. 2, which is the default) and a higher request delay. For Fandom wikis, you can typically use higher concurrency (e.g. 30, the default).
 
